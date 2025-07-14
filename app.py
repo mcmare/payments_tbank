@@ -7,13 +7,15 @@ import time
 import logging
 import logging.handlers
 
+
 #Настройки логгера
 logger = logging.getLogger('my_logger')
 logger.setLevel(logging.DEBUG)
 
-#хендлер для ротации, имя файла, максимальный размер в байтах, количество файлов
+#хендлер для ротации, имя файла, кодировка, максимальный размер в байтах, количество файлов
 handler = logging.handlers.RotatingFileHandler(
     'tbank.log',
+    encoding='utf-8',
     maxBytes=10*1024*1024,
     backupCount=5
 )
@@ -40,14 +42,17 @@ PAYMENT_URL = 'https://securepay.tinkoff.ru/v2/Init'
 # def index():
 #     return render_template('index.html')
 
+
 @app.route('/', methods=['POST'])
 def create_payment():
+    ip = request.remote_addr
+    logger.info(f'{ip} - Получен запрос: {request.form}')
     # Получаем данные из формы ImmutableMultiDict([('uid', '6343'), ('fio', 'Ветюгов Константин Александрович'),
     # ('amount', '5.00'), ('paygateway', 'unknow'), ('summa', '5')])
     amount = request.form.get('amount', '1000')  # Сумма в копейках (например, 100.00 RUB = 10000 копеек)
     order_id = request.form.get('uid', 'order_123') + "_" + str(timenow)  # Уникальный ID заказа
 
-    logger.info(f'Полученны данные, Order_ID: {order_id}, Amount: {amount}')
+    logger.info(f'{ip} - Полученны данные, Order_ID: {order_id}, Amount: {amount}')
 
     # Формируем параметры запроса для API Т-Банка
     payload = {
