@@ -4,6 +4,25 @@ import requests
 from flask import Flask, render_template, request, redirect, jsonify
 from dotenv import load_dotenv
 import time
+import logging
+import logging.handlers
+
+#Настройки логгера
+logger = logging.getLogger('my_logger')
+logger.setLevel(logging.DEBUG)
+
+#хендлер для ротации, имя файла, максимальный размер в байтах, количество файлов
+handler = logging.handlers.RotatingFileHandler(
+    'tbank.log',
+    maxBytes=10*1024*1024,
+    backupCount=5
+)
+
+# формат сообщений
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -27,7 +46,9 @@ def create_payment():
     # ('amount', '5.00'), ('paygateway', 'unknow'), ('summa', '5')])
     amount = request.form.get('amount', '1000')  # Сумма в копейках (например, 100.00 RUB = 10000 копеек)
     order_id = request.form.get('uid', 'order_123') + "_" + str(timenow)  # Уникальный ID заказа
-    print(amount, order_id)
+
+    logger.info(f'Полученны данные, Order_ID: {order_id}, Amount: {amount}')
+
     # Формируем параметры запроса для API Т-Банка
     payload = {
         'TerminalKey': TERMINAL_KEY,
@@ -35,19 +56,19 @@ def create_payment():
         'OrderId': order_id
     }
 
-    print(payload)
+    logger.info(f'Сформирован запрос для генерации токена: {payload}')
 
     # Генерация токена для подписи запроса
     token = generate_token(payload)
-    print(token)
+    logger.info(f'Сгенерирован токен: {token}')
 
     payload['Token'] = token
-    print(payload)
+    logger.info(f'Сформирован запрос в Т-Банк: {payload}')
 
     try:
         # Отправляем запрос к API Т-Банка
         response = requests.post(PAYMENT_URL, json=payload)
-        print(response.text)
+        logger.info(f'Подготовлен для отправки запрос в Т-Банк: {payload}')
         response_data = response.json()
 
         if response_data.get('Success'):
@@ -56,6 +77,7 @@ def create_payment():
         else:
             return jsonify({'error': response_data.get('Message', 'Ошибка создания платежа')}), 400
     except Exception as e:
+        logger.error(f'Ошибка: {e}')
         return jsonify({'error': str(e)}), 500
 
 def generate_token(payload):
@@ -66,7 +88,14 @@ def generate_token(payload):
         'OrderId': payload['OrderId'],
         'Password': PASSWORD
     }
-    print(token_data)
+
+    m_token_data = token_data.copy()
+    m_key = {"Password"}
+    for key in m_key:
+        if key in m_token_data:
+            m_token_data[key] = "***"
+    logger.info(f'Собран запрос для генерации токена: {m_token_data}')
+
     # Сортируем ключи и объединяем значения
     sorted_values = ''.join(str(token_data[key]) for key in sorted(token_data.keys()))
     # Генерируем SHA-256 хеш
