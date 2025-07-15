@@ -48,19 +48,21 @@ SUCCES_URL = os.getenv('SUCCESS_URL')
 def create_payment():
     ip = request.remote_addr
     logger.info(f'{ip} - Получен запрос: {request.form}')
+    uid = request.form['uid']
     # Получаем данные из формы ImmutableMultiDict([('uid', '6343'), ('fio', 'Ветюгов Константин Александрович'),
     # ('amount', '5.00'), ('paygateway', 'unknow'), ('summa', '5')])
     amount = request.form.get('amount', '1000')  # Сумма в копейках (например, 100.00 RUB = 10000 копеек)
-    order_id = request.form.get('uid', 'order_123') + "_" + str(timenow)  # Уникальный ID заказа
+    amount = int(float(amount))
+    order_id = uid + "_" + str(timenow)  # Уникальный ID заказа
 
     logger.info(f'{ip} - Полученны данные, Order_ID: {order_id}, Amount: {amount}')
 
     # Формируем параметры запроса для API Т-Банка
     payload = {
         'TerminalKey': TERMINAL_KEY,
-        'Amount': int(float(amount)) * 100,
+        'Amount': amount * 100,
         'OrderId': order_id,
-        'SuccessURL': f'{SUCCES_URL}/success/{order_id}/{amount}',
+        'SuccessURL': f'{SUCCES_URL}/success/{uid}/{amount}',
     }
 
     logger.info(f'Сформирован запрос для генерации токена: {payload}')
