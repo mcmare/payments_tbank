@@ -17,6 +17,7 @@ nano .env
 ```env
 TBANK_TERMINAL_KEY=TinkoffBankTest
 TBANK_PASSWORD=TinkoffBankTest
+SUCCESS_URL=http://example.org
 ```
 #### запуск Flask
 ```bash

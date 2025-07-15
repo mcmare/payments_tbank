@@ -37,6 +37,7 @@ app = Flask(__name__)
 TERMINAL_KEY = os.getenv('TBANK_TERMINAL_KEY')
 PASSWORD = os.getenv('TBANK_PASSWORD')
 PAYMENT_URL = 'https://securepay.tinkoff.ru/v2/Init'
+SUCCES_URL = os.getenv('SUCCESS_URL')
 
 # @app.route('/')
 # def index():
@@ -58,7 +59,8 @@ def create_payment():
     payload = {
         'TerminalKey': TERMINAL_KEY,
         'Amount': int(float(amount)) * 100,
-        'OrderId': order_id
+        'OrderId': order_id,
+        'SuccessURL': f'{SUCCES_URL}/success/{order_id}/{amount}',
     }
 
     logger.info(f'Сформирован запрос для генерации токена: {payload}')
@@ -91,7 +93,8 @@ def generate_token(payload):
         'TerminalKey': payload['TerminalKey'],
         'Amount': payload['Amount'],
         'OrderId': payload['OrderId'],
-        'Password': PASSWORD
+        'Password': PASSWORD,
+        'SuccessURL': payload['SuccessURL']
     }
 
     m_token_data = token_data.copy()
@@ -106,13 +109,25 @@ def generate_token(payload):
     # Генерируем SHA-256 хеш
     return hashlib.sha256(sorted_values.encode('utf-8')).hexdigest()
 
-@app.route('/success')
-def success():
-    return render_template('success.html')
 
-@app.route('/cancel')
-def cancel():
-    return render_template('cancel.html')
+@app.route('/success/<int:uid>/<int:amount>', methods=['POST'])
+def success(uid, amount):
+    logger.info(f'Получен ответ об операции: {request.json}')
+    if request.method == 'POST':
+        t_key = request.json.get('TerminalKey')
+    if TERMINAL_KEY != t_key:
+        return "ID Терминала не совпадают", 403
+        logger.info(f'ID Терминала не совпадают, присланый ID {t_key}')
+
+    return render_template('success.html', uid=uid, amount=amount)
+
+# @app.route('/success')
+# def success():
+#     return render_template('success.html')
+#
+# @app.route('/cancel')
+# def cancel():
+#     return render_template('cancel.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
