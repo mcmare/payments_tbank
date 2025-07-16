@@ -18,6 +18,12 @@ nano .env
 TBANK_TERMINAL_KEY=TinkoffBankTest
 TBANK_PASSWORD=TinkoffBankTest
 SUCCESS_URL=http://example.org
+
+DB_USER=root
+DB_PASS=password
+DB_HOST=localhost
+DB_NAME=db
+DB_PORT=3306
 ```
 #### запуск Flask
 ```bash

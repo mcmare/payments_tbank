@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import time
 import logging
 import logging.handlers
+import mariadb
+from mariadb import OperationalError
 
 
 #Настройки логгера
@@ -39,9 +41,18 @@ PASSWORD = os.getenv('TBANK_PASSWORD')
 PAYMENT_URL = 'https://securepay.tinkoff.ru/v2/Init'
 SUCCES_URL = os.getenv('SUCCESS_URL')
 
-# @app.route('/')
-# def index():
-#     return render_template('index.html')
+#Настройки базы
+DB_CONFIG = {
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASS'),
+    'host': os.getenv('DB_HOST'),
+    'database': os.getenv('DB_NAME'),
+    'port': int(os.getenv('DB_PORT')),
+    'autocommit': False
+}
+
+MAX_RETRIES = 3  # Максимальное количество попыток подключения к БД
+RETRY_DELAY = 1  # Начальная задержка между попытками в секундах
 
 
 @app.route('/', methods=['POST'])
@@ -118,8 +129,62 @@ def success(uid, amount):
     if request.method == 'POST':
         t_key = request.json.get('TerminalKey')
     if TERMINAL_KEY != t_key:
-        return "ID Терминала не совпадают", 403
         logger.info(f'ID Терминала не совпадают, присланый ID {t_key}')
+        return "ID Терминала не совпадают", 403
+
+    # Попытки подключения к БД с задержкой
+    conn = None
+    cursor = None
+    retry_delay = RETRY_DELAY
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            conn = mariadb.connect(**DB_CONFIG)
+            cursor = conn.cursor()
+            logger.debug(f"Успешное подключение к БД (попытка {attempt + 1})")
+            break
+
+        except OperationalError as e:
+            logger.warning(f"Ошибка подключения к БД (попытка {attempt + 1}): {e}")
+            if attempt < MAX_RETRIES - 1:
+                logger.info(f"Повторная попытка через {retry_delay} сек...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # задержка
+            else:
+                logger.error("Не удалось подключиться к БД после нескольких попыток")
+                return "Ошибка сервера", 500
+
+    # Обновление записи в БД
+    try:
+        # Обновляем баланс пользователя
+        query = """
+        UPDATE users
+        SET balance = balance + ?
+        WHERE uid = ?
+        """
+        cursor.execute(query, (amount, uid))
+
+        # Проверяем, была ли обновлена хотя бы одна строка
+        if cursor.rowcount == 0:
+            logger.error(f"Пользователь с uid={uid} не найден")
+            conn.rollback()
+            return "Пользователь не найден", 404
+
+        conn.commit()
+        logger.info(f"Баланс пользователя {uid} увеличен на {amount}")
+
+    except mariadb.Error as e:
+        logger.error(f"Ошибка SQL: {e}")
+        if conn:
+            conn.rollback()
+        return "Ошибка сервера", 500
+
+    finally:
+        # закрываем соединение
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
     return render_template('success.html', uid=uid, amount=amount)
 
@@ -130,6 +195,7 @@ def success(uid, amount):
 # @app.route('/cancel')
 # def cancel():
 #     return render_template('cancel.html')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
