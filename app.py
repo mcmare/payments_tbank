@@ -6,8 +6,11 @@ from dotenv import load_dotenv
 import time
 import logging
 import logging.handlers
-from sqlalchemy import create_engine, text, exc
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy import text, exc
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+import asyncio
+import backoff
 
 
 #Настройки логгера
@@ -42,23 +45,23 @@ PAYMENT_URL = 'https://securepay.tinkoff.ru/v2/Init'
 SUCCES_URL = os.getenv('SUCCESS_URL')
 
 #Настройки базы
-DB_URI = f'mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}?charset=utf8mb4'
-engine = create_engine(
-    DB_URI,
+ASYNC_DB_URI  = f'mysql+aiomysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}?charset=utf8mb4'
+async_engine = create_async_engine(
+    ASYNC_DB_URI,
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
-    pool_recycle=1800
+    pool_recycle=1800,
+    echo=True
 )
-db_session = scoped_session(sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-))
 
-MAX_RETRIES = 3  # Максимальное количество попыток подключения к БД
-RETRY_DELAY = 1  # Начальная задержка между попытками в секундах
-
+# Создаем асинхронную фабрику сессий
+AsyncSessionLocal = sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False
+)
 
 @app.route('/', methods=['POST'])
 def create_payment():
@@ -129,77 +132,88 @@ def generate_token(payload):
 
 
 @app.route('/success/<int:uid>/<int:amount>', methods=['POST'])
-def success(uid, amount):
+async def success(uid, amount):
     logger.info(f'Получен ответ об операции: {request.json}')
 
-    # Проверка TerminalKey
-    data = request.get_json()
-    if not data:
+    # Проверка JSON и TerminalKey
+    if not request.is_json:
         logger.error("Отсутствует JSON в запросе")
         return "Некорректный запрос", 400
 
+    data = request.get_json()
     t_key = data.get('TerminalKey')
     if TERMINAL_KEY != t_key:
         logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
         return "ID Терминала не совпадают", 403
 
-    # Обновление баланса с повторными попытками
-    retry_count = 0
-    retry_delay = RETRY_DELAY
+    # Обновление баланса с обработкой ошибок
+    try:
+        await update_balance(uid, amount)
+        logger.info(f"Баланс пользователя {uid} успешно обновлен на +{amount}")
+        return render_template('success.html', uid=uid, amount=amount)
 
-    while retry_count <= MAX_RETRIES:
-        try:
-            with db_session() as session:
-                # Обновляем баланс атомарной операцией
-                query = text("""
-                    UPDATE users
-                    SET deposit = deposit + :amount
-                    WHERE uid = :uid
-                """)
-                result = session.execute(
-                    query,
-                    {'amount': amount, 'uid': uid}
-                )
-                session.commit()
-
-                # Проверяем, была ли обновлена запись
-                if result.rowcount == 0:
-                    logger.error(f"Пользователь с uid={uid} не найден")
-                    return "Пользователь не найден", 404
-
-                logger.info(f"Баланс пользователя {uid} увеличен на {amount}")
-                break
-
-        except exc.OperationalError as e:
-            retry_count += 1
-            if retry_count > MAX_RETRIES:
-                logger.error(f"Сетевая ошибка после {MAX_RETRIES} попыток: {e}")
-                return "Ошибка сервера", 500
-
-            logger.warning(f"Сетевая ошибка (попытка {retry_count}): {e}. Повтор через {retry_delay} сек")
-            time.sleep(retry_delay)
-            retry_delay *= 2  # Экспоненциальная задержка
-
-        except exc.SQLAlchemyError as e:
-            logger.error(f"Ошибка базы данных: {e}")
-            session.rollback()
-            return "Ошибка сервера", 500
+    except ValueError as e:
+        logger.error(f"Ошибка валидации: {e}")
+        return str(e), 400
+    except exc.NoResultFound:
+        logger.error(f"Пользователь с uid={uid} не найден")
+        return "Пользователь не найден", 404
+    except Exception as e:
+        logger.error(f"Критическая ошибка: {e}")
+        return "Ошибка сервера", 500
 
     return render_template('success.html', uid=uid, amount=amount)
 
-# @app.route('/success')
-# def success():
-#     return render_template('success.html')
-#
-# @app.route('/cancel')
-# def cancel():
-#     return render_template('cancel.html')
+@backoff.on_exception(backoff.expo,
+                      (exc.OperationalError, exc.DBAPIError),
+                      max_tries=5,
+                      jitter=backoff.full_jitter)
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    db_session.remove()
-    logger.info(f"Закрытие сессии БД")
+
+async def update_balance(uid: int, amount: int):
+    """Асинхронное обновление баланса с повторными попытками"""
+    if amount <= 0:
+        raise ValueError("Некорректная сумма платежа")
+
+    async with AsyncSession(async_engine) as session:
+        async with session.begin():
+            # Атомарное обновление баланса
+            update_query = text("""
+                UPDATE users 
+                SET deposit = deposit + :amount 
+                WHERE uid = :uid
+            """)
+            result = await session.execute(
+                update_query,
+                {"amount": amount, "uid": uid}
+            )
+
+            # Проверка, что пользователь существует
+            if result.rowcount == 0:
+                # Дополнительная проверка существования пользователя
+                exists_query = text("SELECT 1 FROM accounts WHERE uid = :uid")
+                exists = await session.scalar(exists_query, {"uid": uid})
+                if not exists:
+                    raise exc.NoResultFound("Пользователь не существует")
+                else:
+                    logger.warning(f"Обновление баланса не затронуло строки для uid={uid}")
+
+
+@app.route('/health')
+async def health():
+    try:
+        async with AsyncSession(async_engine) as session:
+            await session.scalar(text("SELECT 1"))
+        return "OK", 200
+    except Exception:
+        return "Database unavailable", 500
 
 if __name__ == '__main__':
-    logger.info(f"Запуск приложения")
-    app.run(debug=True)
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
+
+    config = Config()
+    config.bind = ["127.0.0.1:5000"]
+    config.worker_class = "asyncio"
+
+    asyncio.run(serve(app, config))

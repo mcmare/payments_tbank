@@ -1,5 +1,8 @@
-Flask
+Flask[async]
 PyMySQL
 requests
 python-dotenv
-SQLAlchemy
+sqlalchemy[asyncio]
+aiomysql
+hypercorn
+backoff
