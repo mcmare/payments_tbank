@@ -45,7 +45,7 @@ PAYMENT_URL = 'https://securepay.tinkoff.ru/v2/Init'
 SUCCES_URL = os.getenv('SUCCESS_URL')
 
 #Настройки базы
-ASYNC_DB_URI  = f'mysql+aiomysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}?charset=utf8mb4'
+ASYNC_DB_URI  = f'mysql+aiomysql://{os.getenv("DB_USER")}:{os.getenv("DB_PASS")}@{os.getenv("DB_HOST")}/{os.getenv("DB_NAME")}?charset=utf8mb4'
 async_engine = create_async_engine(
     ASYNC_DB_URI,
     pool_size=10,
