@@ -42,7 +42,7 @@ PAYMENT_URL = 'https://securepay.tinkoff.ru/v2/Init'
 SUCCES_URL = os.getenv('SUCCESS_URL')
 
 #Настройки базы
-DB_URI = f'mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}?charset=utf8mb4'
+DB_URI = f'mysql+pymysql://{os.getenv("DB_USER")}:{os.getenv("DB_PASS")}@{os.getenv("DB_HOST")}/{os.getenv("DB_NAME")}?charset=utf8mb4'
 engine = create_engine(
     DB_URI,
     pool_size=10,
