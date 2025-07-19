@@ -166,7 +166,7 @@ def success(uid, amount):
             logger.error("Отсутствует JSON в запросе")
             return "Некорректный запрос", 400
 
-        plategid = data.get('OrderId')
+        plategid = int(data.get('PaymentId'))
         comment = f'orderId-{data.get("OrderId")}_paymentId-{data.get("PaymentId")}_amount-{data.get("Amount")}_cardId-{data.get("CardId")}'
         what = 'tBank_payment'
         what_id = data.get('OrderId')
