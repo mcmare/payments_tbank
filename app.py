@@ -166,10 +166,10 @@ def success(uid, amount):
             logger.error("Отсутствует JSON в запросе")
             return "Некорректный запрос", 400
 
-        plategid = data.get['OrderId']
-        comment = f'orderId-{data.get["OrderId"]}_paymentId-{data.get["PaymentId"]}_amount-{data.get["Amount"]}_cardId-{data.get["CardId"]}'
+        plategid = data.get('OrderId')
+        comment = f'orderId-{data.get("OrderId")}_paymentId-{data.get("PaymentId")}_amount-{data.get("Amount")}_cardId-{data.get("CardId")}'
         what = 'tBank_payment'
-        what_id = data.get['OrderId']
+        what_id = data.get('OrderId')
         t_key = data.get('TerminalKey')
         if TERMINAL_KEY != t_key:
             logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
