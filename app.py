@@ -135,7 +135,8 @@ def generate_token(payload):
 @app.route('/success/<int:uid>/<int:amount>', methods=['POST'])
 def success(uid, amount):
     logger.info(f'Получен ответ об операции: {request.json}')
-
+    print(f'Получен ответ об операции: {request.json}')
+    print(f'Получен ответ об операции: {request.text}')
     # Проверка TerminalKey
     data = request.get_json()
     if not data:
