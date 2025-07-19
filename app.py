@@ -116,7 +116,7 @@ def generate_token(payload):
         'Amount': payload['Amount'],
         'OrderId': payload['OrderId'],
         'Password': PASSWORD,
-        'SuccessURL': payload['SuccessURL']
+        'NotificationURL': payload['SuccessURL']
     }
 
     m_token_data = token_data.copy()
