@@ -60,6 +60,10 @@ MAX_RETRIES = 3  # Максимальное количество попыток 
 RETRY_DELAY = 1  # Начальная задержка между попытками в секундах
 
 
+@app.route('/create')
+def create():
+    return render_template('index.html')
+
 @app.route('/', methods=['POST'])
 def create_payment():
     ip = request.remote_addr
