@@ -8,6 +8,7 @@ import logging
 import logging.handlers
 from sqlalchemy import create_engine, text, exc
 from sqlalchemy.orm import scoped_session, sessionmaker
+from contextlib import contextmanager
 
 
 #Настройки логгера
@@ -199,10 +200,13 @@ def success(uid, amount):
                     )
                     query2 = text("""
                         INSERT INTO bugh_plategi_info (plategid, comment, what, what_id) 
-                        Values (:plategid, :comment, :what, :what_id)
+                        SELECT 
+                        COALESCE(MAX(plategid), 0) + 1,
+                        :comment, :what, :what_id
+                        FROM bugh_plategi_info
                     """)
                     result = session.execute(
-                        query2,{'plategid': plategid, 'comment': comment, 'what': what, 'what_id': what_id}
+                        query2,{'comment': comment, 'what': what, 'what_id': what_id}
                     )
                     session.commit()
 
