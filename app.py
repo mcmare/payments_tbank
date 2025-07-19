@@ -133,107 +133,82 @@ def generate_token(payload):
     return hashlib.sha256(sorted_values.encode('utf-8')).hexdigest()
 
 
-@app.route('/success/<int:uid>/<int:amount>', methods=['POST', 'GET'])
+@app.route('/success/<int:uid>/<int:amount>', methods=['POST'])
 def success(uid, amount):
-    # Для GET запроса
-    if request.method == 'GET':
-        # Собираем все доступные данные из запроса
-        get_data = {
-            'method': 'GET',
-            'uid': uid,
-            'amount': amount,
-            'query_params': request.args.to_dict(),
-            'headers': dict(request.headers)
-        }
+    logger.info(f'Получен ответ об операции: {request.json}')
+    # Проверка TerminalKey
+    data = request.get_json()
+    if not data:
+        logger.error("Отсутствует JSON в запросе")
+        return "Некорректный запрос", 400
 
-        # Логируем и выводим в консоль
-        logger.info(f'Получен GET запрос: {get_data}')
-        print(f'\n--- GET запрос на /success ---')
-        print(f'Параметры пути: uid={uid}, amount={amount}')
-        print(f'Query параметры: {request.args.to_dict()}')
-        print(f'Заголовки:')
-        for header, value in request.headers.items():
-            print(f'  {header}: {value}')
+    plategid = int(data.get('PaymentId'))
+    comment = f'orderId-{data.get("OrderId")}_paymentId-{data.get("PaymentId")}_amount-{data.get("Amount")}_cardId-{data.get("CardId")}'
+    what = 'tBank_payment'
+    what_id = data.get('OrderId')
+    t_key = data.get('TerminalKey')
+    if TERMINAL_KEY != t_key:
+        logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
+        return "ID Терминала не совпадают", 403
 
-        # Возвращаем простой ответ
-        return f'GET запрос получен. UID: {uid}, Amount: {amount}', 200
+    status_pay = data.get('Status')
+    if status_pay != 'CONFIRMED':
+        logger.info(f'Статус платежа не CONFIRMED, status = {status_pay}')
+        return "Статус платежа не CONFIRMED"
 
-    if request.method == 'POST':
+    # Обновление баланса с повторными попытками
+    retry_count = 0
+    retry_delay = RETRY_DELAY
 
-        logger.info(f'Получен ответ об операции: {request.json}')
-        # Проверка TerminalKey
-        data = request.get_json()
-        if not data:
-            logger.error("Отсутствует JSON в запросе")
-            return "Некорректный запрос", 400
+    while retry_count <= MAX_RETRIES:
+        try:
+            with db_session() as session:
+                # Обновляем баланс атомарной операцией
+                query = text("""
+                    UPDATE users
+                    SET deposit = deposit + :amount
+                    WHERE uid = :uid
+                """)
+                result = session.execute(
+                    query,
+                    {'amount': amount, 'uid': uid}
+                )
+                query2 = text("""
+                    INSERT INTO bugh_plategi_info (plategid, comment, what, what_id) 
+                    SELECT 
+                    COALESCE(MAX(plategid), 0) + 1,
+                    :comment, :what, :what_id
+                    FROM bugh_plategi_info
+                """)
+                result = session.execute(
+                    query2,{'comment': comment, 'what': what, 'what_id': what_id}
+                )
+                session.commit()
 
-        plategid = int(data.get('PaymentId'))
-        comment = f'orderId-{data.get("OrderId")}_paymentId-{data.get("PaymentId")}_amount-{data.get("Amount")}_cardId-{data.get("CardId")}'
-        what = 'tBank_payment'
-        what_id = data.get('OrderId')
-        t_key = data.get('TerminalKey')
-        if TERMINAL_KEY != t_key:
-            logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
-            return "ID Терминала не совпадают", 403
+                # Проверяем, была ли обновлена запись
+                if result.rowcount == 0:
+                    logger.error(f"Пользователь с uid={uid} не найден")
+                    return "Пользователь не найден", 404
 
-        status_pay = data.get('Status')
-        if status_pay != 'CONFIRMED':
-            logger.info(f'Статус платежа не CONFIRMED, status = {status_pay}')
-            return "Статус платежа не CONFIRMED"
+                logger.info(f"Баланс пользователя {uid} увеличен на {amount}")
+                break
 
-        # Обновление баланса с повторными попытками
-        retry_count = 0
-        retry_delay = RETRY_DELAY
-
-        while retry_count <= MAX_RETRIES:
-            try:
-                with db_session() as session:
-                    # Обновляем баланс атомарной операцией
-                    query = text("""
-                        UPDATE users
-                        SET deposit = deposit + :amount
-                        WHERE uid = :uid
-                    """)
-                    result = session.execute(
-                        query,
-                        {'amount': amount, 'uid': uid}
-                    )
-                    query2 = text("""
-                        INSERT INTO bugh_plategi_info (plategid, comment, what, what_id) 
-                        SELECT 
-                        COALESCE(MAX(plategid), 0) + 1,
-                        :comment, :what, :what_id
-                        FROM bugh_plategi_info
-                    """)
-                    result = session.execute(
-                        query2,{'comment': comment, 'what': what, 'what_id': what_id}
-                    )
-                    session.commit()
-
-                    # Проверяем, была ли обновлена запись
-                    if result.rowcount == 0:
-                        logger.error(f"Пользователь с uid={uid} не найден")
-                        return "Пользователь не найден", 404
-
-                    logger.info(f"Баланс пользователя {uid} увеличен на {amount}")
-                    break
-
-            except exc.OperationalError as e:
-                retry_count += 1
-                if retry_count > MAX_RETRIES:
-                    logger.error(f"Сетевая ошибка после {MAX_RETRIES} попыток: {e}")
-                    return "Ошибка сервера", 500
-
-                logger.warning(f"Сетевая ошибка (попытка {retry_count}): {e}. Повтор через {retry_delay} сек")
-                time.sleep(retry_delay)
-                retry_delay *= 2  # Экспоненциальная задержка
-
-            except exc.SQLAlchemyError as e:
-                logger.error(f"Ошибка базы данных: {e}")
-                session.rollback()
+        except exc.OperationalError as e:
+            retry_count += 1
+            if retry_count > MAX_RETRIES:
+                logger.error(f"Сетевая ошибка после {MAX_RETRIES} попыток: {e}")
                 return "Ошибка сервера", 500
 
-        return render_template('success.html', uid=uid, amount=amount)
+            logger.warning(f"Сетевая ошибка (попытка {retry_count}): {e}. Повтор через {retry_delay} сек")
+            time.sleep(retry_delay)
+            retry_delay *= 2  # Экспоненциальная задержка
+
+        except exc.SQLAlchemyError as e:
+            logger.error(f"Ошибка базы данных: {e}")
+            session.rollback()
+            return "Ошибка сервера", 500
+
+    return render_template('success.html', uid=uid, amount=amount)
 
 
 @app.teardown_appcontext
