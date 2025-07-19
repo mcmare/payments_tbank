@@ -158,10 +158,7 @@ def success(uid, amount):
         return f'GET запрос получен. UID: {uid}, Amount: {amount}', 200
 
     if request.method == 'POST':
-        plategid = request.form['OrderId']
-        comment = f'orderId-{request.form["OrderId"]}_paymentId-{request.form["PaymentId"]}_amount-{request.form["Amount"]}_cardId-{request.form["CardId"]}'
-        what = 'tBank_payment'
-        what_id = request.form['OrderId']
+
         logger.info(f'Получен ответ об операции: {request.json}')
         # Проверка TerminalKey
         data = request.get_json()
@@ -169,6 +166,10 @@ def success(uid, amount):
             logger.error("Отсутствует JSON в запросе")
             return "Некорректный запрос", 400
 
+        plategid = data.get['OrderId']
+        comment = f'orderId-{data.get["OrderId"]}_paymentId-{data.get["PaymentId"]}_amount-{data.get["Amount"]}_cardId-{data.get["CardId"]}'
+        what = 'tBank_payment'
+        what_id = data.get['OrderId']
         t_key = data.get('TerminalKey')
         if TERMINAL_KEY != t_key:
             logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
