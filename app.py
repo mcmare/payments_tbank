@@ -158,6 +158,10 @@ def success(uid, amount):
         return f'GET запрос получен. UID: {uid}, Amount: {amount}', 200
 
     if request.method == 'POST':
+        plategid = request.form['OrderId']
+        comment = f'orderId-{request.form['OrderId']}_paymentId-{request.form["PaymentId"]}_amount-{request.form["Amount"]}_cardId-{request.form["CardId"]}'
+        what = 'tBank_payment'
+        what_id = request.form['OrderId']
         logger.info(f'Получен ответ об операции: {request.json}')
         # Проверка TerminalKey
         data = request.get_json()
@@ -191,6 +195,13 @@ def success(uid, amount):
                     result = session.execute(
                         query,
                         {'amount': amount, 'uid': uid}
+                    )
+                    query2 = text("""
+                        INSERT INTO bugh_plategi_info (plategid, comment, what, what_id) 
+                        Values (:plategid, :comment, :what, :what_id)
+                    """)
+                    result = session.execute(
+                        query2,{'plategid': plategid, 'comment': comment, 'what': what, 'what_id': what_id}
                     )
                     session.commit()
 
