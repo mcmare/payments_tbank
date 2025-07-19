@@ -177,9 +177,9 @@ def success(uid, amount):
             return "ID Терминала не совпадают", 403
 
         status_pay = data.get('Status')
-        if status_pay != 'AUTHORIZED':
-            logger.info(f'Статус платежа не AUTHORIZED, status = {status_pay}')
-            return "Статус платежа не AUTHORIZED"
+        if status_pay != 'CONFIRMED':
+            logger.info(f'Статус платежа не CONFIRMED, status = {status_pay}')
+            return "Статус платежа не CONFIRMED"
 
         # Обновление баланса с повторными попытками
         retry_count = 0
