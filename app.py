@@ -159,8 +159,6 @@ def success(uid, amount):
 
     if request.method == 'POST':
         logger.info(f'Получен ответ об операции: {request.json}')
-        print(f'Получен ответ об операции: {request.json}')
-        print(f'Получен ответ об операции: {request.text}')
         # Проверка TerminalKey
         data = request.get_json()
         if not data:
