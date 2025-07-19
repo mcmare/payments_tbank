@@ -82,7 +82,7 @@ def create_payment():
         'TerminalKey': TERMINAL_KEY,
         'Amount': amount * 100,
         'OrderId': order_id,
-        'SuccessURL': f'{SUCCES_URL}/success/{uid}/{amount}',
+        'NotificationURL': f'{SUCCES_URL}/success/{uid}/{amount}',
     }
 
     logger.info(f'Сформирован запрос для генерации токена: {payload}')
@@ -116,7 +116,7 @@ def generate_token(payload):
         'Amount': payload['Amount'],
         'OrderId': payload['OrderId'],
         'Password': PASSWORD,
-        'NotificationURL': payload['SuccessURL']
+        'NotificationURL': payload['NotificationURL']
     }
 
     m_token_data = token_data.copy()
