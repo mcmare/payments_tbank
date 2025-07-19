@@ -159,7 +159,7 @@ def success(uid, amount):
 
     if request.method == 'POST':
         plategid = request.form['OrderId']
-        comment = f'orderId-{request.form['OrderId']}_paymentId-{request.form["PaymentId"]}_amount-{request.form["Amount"]}_cardId-{request.form["CardId"]}'
+        comment = f'orderId-{request.form["OrderId"]}_paymentId-{request.form["PaymentId"]}_amount-{request.form["Amount"]}_cardId-{request.form["CardId"]}'
         what = 'tBank_payment'
         what_id = request.form['OrderId']
         logger.info(f'Получен ответ об операции: {request.json}')
