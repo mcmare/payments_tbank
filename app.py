@@ -268,9 +268,10 @@ def generate_token(payload):
     token_data = {
         'TerminalKey': payload['TerminalKey'],
         'Amount': payload['Amount'],
+        'NotificationURL': payload['NotificationURL'],
         'OrderId': payload['OrderId'],
         'Password': PASSWORD,
-        'NotificationURL': payload['NotificationURL']
+        'SuccessURL': payload['SuccessURL']
     }
 
     m_token_data = token_data.copy()
