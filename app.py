@@ -306,29 +306,54 @@ def generate_token(payload):
     return hashlib.sha256(sorted_values.encode('utf-8')).hexdigest()
 
 
-@app.route('/success/<int:uid>/<int:amount>', methods=['POST'])
+@app.route('/success/<int:uid>/<int:amount>', methods=['POST', 'GET'])
 def success(uid, amount):
-    logger.info(f'Получен ответ об операции: {request.json}')
-    # Проверка TerminalKey
-    data = request.get_json()
-    if not data:
-        logger.error("Отсутствует JSON в запросе")
-        return "Некорректный запрос", 400
+    # Для GET запроса
+    if request.method == 'GET':
+        # Собираем все доступные данные из запроса
+        get_data = {
+            'method': 'GET',
+            'uid': uid,
+            'amount': amount,
+            'query_params': request.args.to_dict(),
+            'headers': dict(request.headers)
+        }
+
+        # Логируем и выводим в консоль
+        logger.info(f'Получен GET запрос: {get_data}')
+        print(f'\n--- GET запрос на /success ---')
+        print(f'Параметры пути: uid={uid}, amount={amount}')
+        print(f'Query параметры: {request.args.to_dict()}')
+        print(f'Заголовки:')
+        for header, value in request.headers.items():
+            print(f'  {header}: {value}')
+
+        # Возвращаем простой ответ
+        return render_template('success.html', uid=uid, amount=amount)
+
+    if request.method == 'POST':
+
+        logger.info(f'Получен ответ об операции: {request.json}')
+        # Проверка TerminalKey
+        data = request.get_json()
+        if not data:
+            logger.error("Отсутствует JSON в запросе")
+            return "Некорректный запрос", 400
 
 
-    t_key = data.get('TerminalKey')
-    if TERMINAL_KEY != t_key:
-        logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
-        return "ID Терминала не совпадают", 403
+        t_key = data.get('TerminalKey')
+        if TERMINAL_KEY != t_key:
+            logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
+            return "ID Терминала не совпадают", 403
 
-    status_pay = data.get('Status')
-    if status_pay != 'CONFIRMED':
-        logger.info(f'Статус платежа не CONFIRMED, status = {status_pay}')
-        return "Статус платежа не CONFIRMED"
+        status_pay = data.get('Status')
+        if status_pay != 'CONFIRMED':
+            logger.info(f'Статус платежа не CONFIRMED, status = {status_pay}')
+            return "Статус платежа не CONFIRMED"
 
 
 
-    return render_template('success.html', uid=uid, amount=amount)
+        return render_template('success.html', uid=uid, amount=amount)
 
 
 @app.teardown_appcontext
