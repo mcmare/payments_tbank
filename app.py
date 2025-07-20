@@ -9,7 +9,7 @@ import logging.handlers
 from sqlalchemy import create_engine, text, exc
 from sqlalchemy.orm import scoped_session, sessionmaker
 from contextlib import contextmanager
-
+import re
 
 #Настройки логгера
 logger = logging.getLogger('my_logger')
@@ -60,10 +60,149 @@ db_session = scoped_session(sessionmaker(
 MAX_RETRIES = 3  # Максимальное количество попыток подключения к БД
 RETRY_DELAY = 1  # Начальная задержка между попытками в секундах
 
+# Список разрешенных IP-адресов (замените на реальные)
+ALLOWED_IPS = {
+    '91.194.226.0',
+    '91.218.132.0',
+    '91.218.133.0',
+    '91.218.134.0',
+    '91.218.135.0',
+    '212.49.24.0',
+    '212.233.80.0',
+    '212.233.81.0',
+    '212.233.82.0',
+    '212.233.83.0',
+    '91.194.226.181'
+}
 
 @app.route('/create')
 def create():
     return render_template('index.html')
+
+
+
+@app.route('/payment_callback', methods=['POST'])
+def payment_callback():
+    # Проверка IP-адреса клиента
+    client_ip = request.remote_addr
+    if client_ip not in ALLOWED_IPS:
+        logger.info(f'{client_ip} вне списка разрешенных')
+        return jsonify({
+            "code": "FORBIDDEN",
+            "message": "Access denied"
+        }), 403
+
+    # Получение и проверка JSON-данных
+    data = request.get_json()
+    if not data:
+        logger.info(f'Запрос не содержит JSON')
+        return jsonify({
+            "code": "BAD_REQUEST",
+            "message": "Missing JSON data"
+        }), 400
+
+    # Проверка обязательных полей
+    required_fields = ['Status', 'OrderId', 'Amount']
+    for field in required_fields:
+        if field not in data:
+            logger.info(f'Запрос не содержит обязательного поля{field}')
+            return jsonify({
+                "code": "INVALID_DATA",
+                "message": f"Missing required field: {field}"
+            }), 400
+
+    # Проверка статуса платежа
+    if data['Status'] != 'CONFIRMED':
+        logger.info(f"Статус платежа {data['Status']}")
+        return jsonify({
+            "code": "UNSUPPORTED_STATUS",
+            "message": f"Ignoring status: {data['Status']}"
+        }), 200
+
+    # Извлечение uid из OrderId
+    order_id = data['OrderId']
+    uid_match = re.match(r'^(\d+)_', order_id)
+
+    if not uid_match:
+        logger.info(f"OrderId имеет неожиданный формат - {order_id}")
+        return jsonify({
+            "code": "INVALID_ORDER_ID",
+            "message": "OrderId format is invalid"
+        }), 400
+
+    try:
+        uid = int(uid_match.group(1))
+    except ValueError:
+        logger.info(f"UID содержит неожиднные символы - {uid_match.group(1)}")
+        return jsonify({
+            "code": "INVALID_UID",
+            "message": "UID must be numeric"
+        }), 400
+
+    retry_count = 0
+    retry_delay = RETRY_DELAY
+
+    amount = data.get("Amount")
+    comment = f'orderId-{data.get("OrderId")}_paymentId-{data.get("PaymentId")}_amount-{amount}_cardId-{data.get("CardId")}'
+    what = 'tBank_payment'
+    what_id = data.get('OrderId')
+
+    while retry_count <= MAX_RETRIES:
+        try:
+            with db_session() as session:
+                # Обновляем баланс атомарной операцией
+                query = text("""
+                        UPDATE users
+                        SET deposit = deposit + :amount
+                        WHERE uid = :uid
+                    """)
+                result = session.execute(
+                    query,
+                    {'amount': amount, 'uid': uid}
+                )
+                query2 = text("""
+                        INSERT INTO bugh_plategi_info (plategid, comment, what, what_id) 
+                        SELECT 
+                        COALESCE(MAX(plategid), 0) + 1,
+                        :comment, :what, :what_id
+                        FROM bugh_plategi_info
+                    """)
+                result = session.execute(
+                    query2, {'comment': comment, 'what': what, 'what_id': what_id}
+                )
+                session.commit()
+
+                # Проверяем, была ли обновлена запись
+                if result.rowcount == 0:
+                    logger.error(f"Пользователь с uid={uid} не найден")
+                    return "Пользователь не найден", 404
+
+                logger.info(f"Баланс пользователя {uid} увеличен на {amount}")
+                break
+
+        except exc.OperationalError as e:
+            retry_count += 1
+            if retry_count > MAX_RETRIES:
+                logger.error(f"Сетевая ошибка после {MAX_RETRIES} попыток: {e}")
+                return "Ошибка сервера", 500
+
+            logger.warning(f"Сетевая ошибка (попытка {retry_count}): {e}. Повтор через {retry_delay} сек")
+            time.sleep(retry_delay)
+            retry_delay *= 2  # Экспоненциальная задержка
+
+        except exc.SQLAlchemyError as e:
+            logger.error(f"Ошибка базы данных: {e}")
+            session.rollback()
+            return "Ошибка сервера", 500
+
+    # Пример логирования (замените на реальную логику)
+    print(f"✅ Подтвержден платеж для uid={uid}")
+    print(f"   OrderId: {order_id}")
+    print(f"   Сумма: {data['Amount']} копеек")
+    print(f"   ID платежа: {data.get('PaymentId')}")
+
+    # Успешный ответ платежной системе
+    return jsonify({"code": "SUCCESS"}), 200
 
 @app.route('/', methods=['POST'])
 def create_payment():
@@ -142,10 +281,7 @@ def success(uid, amount):
         logger.error("Отсутствует JSON в запросе")
         return "Некорректный запрос", 400
 
-    plategid = int(data.get('PaymentId'))
-    comment = f'orderId-{data.get("OrderId")}_paymentId-{data.get("PaymentId")}_amount-{data.get("Amount")}_cardId-{data.get("CardId")}'
-    what = 'tBank_payment'
-    what_id = data.get('OrderId')
+
     t_key = data.get('TerminalKey')
     if TERMINAL_KEY != t_key:
         logger.error(f'ID Терминала не совпадают, присланый ID {t_key}')
@@ -156,57 +292,7 @@ def success(uid, amount):
         logger.info(f'Статус платежа не CONFIRMED, status = {status_pay}')
         return "Статус платежа не CONFIRMED"
 
-    # Обновление баланса с повторными попытками
-    retry_count = 0
-    retry_delay = RETRY_DELAY
 
-    while retry_count <= MAX_RETRIES:
-        try:
-            with db_session() as session:
-                # Обновляем баланс атомарной операцией
-                query = text("""
-                    UPDATE users
-                    SET deposit = deposit + :amount
-                    WHERE uid = :uid
-                """)
-                result = session.execute(
-                    query,
-                    {'amount': amount, 'uid': uid}
-                )
-                query2 = text("""
-                    INSERT INTO bugh_plategi_info (plategid, comment, what, what_id) 
-                    SELECT 
-                    COALESCE(MAX(plategid), 0) + 1,
-                    :comment, :what, :what_id
-                    FROM bugh_plategi_info
-                """)
-                result = session.execute(
-                    query2,{'comment': comment, 'what': what, 'what_id': what_id}
-                )
-                session.commit()
-
-                # Проверяем, была ли обновлена запись
-                if result.rowcount == 0:
-                    logger.error(f"Пользователь с uid={uid} не найден")
-                    return "Пользователь не найден", 404
-
-                logger.info(f"Баланс пользователя {uid} увеличен на {amount}")
-                break
-
-        except exc.OperationalError as e:
-            retry_count += 1
-            if retry_count > MAX_RETRIES:
-                logger.error(f"Сетевая ошибка после {MAX_RETRIES} попыток: {e}")
-                return "Ошибка сервера", 500
-
-            logger.warning(f"Сетевая ошибка (попытка {retry_count}): {e}. Повтор через {retry_delay} сек")
-            time.sleep(retry_delay)
-            retry_delay *= 2  # Экспоненциальная задержка
-
-        except exc.SQLAlchemyError as e:
-            logger.error(f"Ошибка базы данных: {e}")
-            session.rollback()
-            return "Ошибка сервера", 500
 
     return render_template('success.html', uid=uid, amount=amount)
 
