@@ -228,10 +228,10 @@ def payment_callback():
             return "Ошибка сервера", 500
 
     # Пример логирования (замените на реальную логику)
-    print(f"✅ Подтвержден платеж для uid={uid}")
-    print(f"   OrderId: {order_id}")
-    print(f"   Сумма: {data['Amount']} копеек")
-    print(f"   ID платежа: {data.get('PaymentId')}")
+    logger.info(f"✅ Подтвержден платеж для uid={uid}")
+    logger.info(f"   OrderId: {order_id}")
+    logger.info(f"   Сумма: {data['Amount']} копеек")
+    logger.info(f"   ID платежа: {data.get('PaymentId')}")
 
     # Успешный ответ платежной системе
     return jsonify({"code": "SUCCESS"}), 200
