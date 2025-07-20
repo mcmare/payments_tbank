@@ -1,5 +1,8 @@
+import json
 import os
 import hashlib
+from datetime import datetime
+
 import requests
 from flask import Flask, render_template, request, redirect, jsonify
 from dotenv import load_dotenv
@@ -85,6 +88,16 @@ def create():
 def payment_callback():
     # Проверка IP-адреса клиента
     client_ip = request.remote_addr
+    request_data = {
+        'timestamp': datetime.now().isoformat(),
+        'client_ip': client_ip,
+        'method': request.method,
+        'path': request.path,
+        'headers': dict(request.headers),
+        'data': request.get_data(as_text=True)  # Логируем сырые данные
+    }
+    logger.info("Incoming request:\n" + json.dumps(request_data, indent=2, ensure_ascii=False))
+
     if client_ip not in ALLOWED_IPS:
         logger.info(f'{client_ip} вне списка разрешенных')
         return jsonify({
@@ -142,7 +155,7 @@ def payment_callback():
     retry_count = 0
     retry_delay = RETRY_DELAY
 
-    amount = data.get("Amount")
+    amount = int(data.get("Amount"))/100
     comment = f'orderId-{data.get("OrderId")}_paymentId-{data.get("PaymentId")}_amount-{amount}_cardId-{data.get("CardId")}'
     what = 'tBank_payment'
     what_id = data.get('OrderId')
