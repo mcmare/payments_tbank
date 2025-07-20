@@ -222,7 +222,8 @@ def create_payment():
         'TerminalKey': TERMINAL_KEY,
         'Amount': amount * 100,
         'OrderId': order_id,
-        'NotificationURL': f'{SUCCES_URL}/success/{uid}/{amount}',
+        'NotificationURL': f'{SUCCES_URL}/payment_callback',
+        'SuccessURL': f'{SUCCES_URL}/{uid}/{amount}'
     }
 
     logger.info(f'Сформирован запрос для генерации токена: {payload}')
