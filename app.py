@@ -108,9 +108,6 @@ def payment_callback():
     print(f"X-Real-Ip header: {request.headers.get('X-Real-Ip')}")
     print(f"X-Forwarded-For header: {request.headers.get('X-Forwarded-For')}")
 
-    if not client_ip or not is_ip_allowed(client_ip):
-        app.logger.error(f"IP {client_ip} не в разрешенных диапазонах")
-        return jsonify({"error": "Forbidden"}), 403
 
     request_data = {
         'timestamp': datetime.now().isoformat(),
@@ -122,12 +119,10 @@ def payment_callback():
     }
     logger.info("Incoming request:\n" + json.dumps(request_data, indent=2, ensure_ascii=False))
 
-    if client_ip not in ALLOWED_IPS:
-        logger.info(f'{client_ip} вне списка разрешенных')
-        return jsonify({
-            "code": "FORBIDDEN",
-            "message": "Access denied"
-        }), 403
+
+    if not client_ip or not is_ip_allowed(client_ip):
+        app.logger.error(f"IP {client_ip} не в разрешенных диапазонах")
+        return jsonify({"error": "Forbidden"}), 403
 
     # Получение и проверка JSON-данных
     data = request.get_json()
