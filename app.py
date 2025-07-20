@@ -2,7 +2,7 @@ import json
 import os
 import hashlib
 from datetime import datetime
-
+import ipaddress
 import requests
 from flask import Flask, render_template, request, redirect, jsonify
 from dotenv import load_dotenv
@@ -64,19 +64,32 @@ MAX_RETRIES = 3  # Максимальное количество попыток 
 RETRY_DELAY = 1  # Начальная задержка между попытками в секундах
 
 # Список разрешенных IP-адресов (замените на реальные)
-ALLOWED_IPS = {
-    '91.194.226.0',
-    '91.218.132.0',
-    '91.218.133.0',
-    '91.218.134.0',
-    '91.218.135.0',
-    '212.49.24.0',
-    '212.233.80.0',
-    '212.233.81.0',
-    '212.233.82.0',
-    '212.233.83.0',
-    '91.194.226.181'
-}
+ALLOWED_NETWORKS = [
+    '91.194.226.0/23',
+    '91.218.132.0/24',
+    '91.218.133.0/24',
+    '91.218.134.0/24',
+    '91.218.135.0/24',
+    '212.49.24.0/24',
+    '212.233.80.0/24',
+    '212.233.81.0/24',
+    '212.233.82.0/24',
+    '212.233.83.0/24',
+    '91.194.226.181/32'
+]
+
+# Компилируем сети один раз при запуске приложения
+ALLOWED_NETS = [ipaddress.ip_network(net) for net in ALLOWED_NETWORKS]
+
+
+def is_ip_allowed(ip_str):
+    """Проверяет, принадлежит ли IP к разрешенным диапазонам"""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return any(ip in net for net in ALLOWED_NETS)
+    except ValueError:
+        return False
+
 
 @app.route('/create')
 def create():
@@ -88,9 +101,16 @@ def create():
 def payment_callback():
     # Проверка IP-адреса клиента
     client_ip = request.headers.get('X-Real-Ip') or request.headers.get('X-Forwarded-For') or request.remote_addr
+    if client_ip and ',' in client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+
     print(f"Real client IP: {client_ip}")
     print(f"X-Real-Ip header: {request.headers.get('X-Real-Ip')}")
     print(f"X-Forwarded-For header: {request.headers.get('X-Forwarded-For')}")
+
+    if not client_ip or not is_ip_allowed(client_ip):
+        app.logger.error(f"IP {client_ip} не в разрешенных диапазонах")
+        return jsonify({"error": "Forbidden"}), 403
 
     request_data = {
         'timestamp': datetime.now().isoformat(),
