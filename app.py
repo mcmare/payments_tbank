@@ -87,7 +87,11 @@ def create():
 @app.route('/payment_callback', methods=['POST'])
 def payment_callback():
     # Проверка IP-адреса клиента
-    client_ip = request.remote_addr
+    client_ip = request.headers.get('X-Real-Ip') or request.headers.get('X-Forwarded-For') or request.remote_addr
+    print(f"Real client IP: {client_ip}")
+    print(f"X-Real-Ip header: {request.headers.get('X-Real-Ip')}")
+    print(f"X-Forwarded-For header: {request.headers.get('X-Forwarded-For')}")
+
     request_data = {
         'timestamp': datetime.now().isoformat(),
         'client_ip': client_ip,
